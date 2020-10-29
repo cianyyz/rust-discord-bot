@@ -1,0 +1,13 @@
+[package]
+name = "rust-first-bot"
+version = "0.1.0"
+authors = ["cianyyz <25750319+cianyyz@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serenity = "0.9.0-rc.4"
+tokio = { version = "0.2", features = ["macros"] }
+dotenv = "0.15.0"
+
