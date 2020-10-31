@@ -7,5 +7,7 @@ build
 opencv-master
 opencv_contrib-master
 .vscode
-/tmp
+/tmp/*
+!/tmp/fixed
+/tmp/fixed/*
 env

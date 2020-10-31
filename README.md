@@ -13,7 +13,7 @@ cargo build
 cargo run
 ```
 
-env variables
+.env variables
 ```
 PREFIX=`
 DISCORD_TOKEN=
