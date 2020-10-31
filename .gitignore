@@ -1,5 +1,11 @@
 .env
 Cargo.lock
 # Added by cargo
-
+/img/*
 /target
+build
+opencv-master
+opencv_contrib-master
+.vscode
+/tmp
+env
