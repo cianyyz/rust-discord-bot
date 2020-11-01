@@ -2,7 +2,10 @@ use serenity::model::prelude::*;
 use serenity::{
     framework::standard::{macros::command, Args, CommandResult},
     http::AttachmentType,
-    model::channel::Message,
+    model::{
+        channel::Message,
+        prelude::*,
+    },
     prelude::*,
 };
 
@@ -16,8 +19,11 @@ use std::path::Path;
 use std::fs;
 use std::process::Command;
 #[command]
-#[description = "Removes image background"]
-#[owners_only]
+#[min_args(0)]
+#[max_args(2)]
+#[description("Tries to remove background of an image")]
+#[usage("bgrm <images attached>")]
+#[example("bgrm <image here>")]
 async fn bgrm(context: &Context, message: &Message, mut args: Args) -> CommandResult {
     
     for attachment in &message.attachments {

@@ -11,3 +11,4 @@ opencv_contrib-master
 !/tmp/fixed
 /tmp/fixed/*
 env
+config.toml

@@ -1,108 +1,116 @@
 mod commands;
+mod listeners;
+mod data;
+mod prelude;
+mod utils;
+use crate::{commands::*, listeners::Handler, prelude::*, utils::framework::*};
+use crate::data::cache::ShardManagerContainer;
+use crate::data::cache::BotId;
+use crate::data::cache::BotOwners;
+use crate::data::cache::DefaultPrefix;
+use crate::data::cache::GuildPrefixes;
+use serenity::{
+    client::bridge::gateway::GatewayIntents, framework::StandardFramework, http::Http, model::prelude::*, prelude::*,
+};
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     sync::Arc,
 };
-use serenity::{
-    async_trait,
-    client::bridge::gateway::ShardManager,
-    framework::{
-        StandardFramework,
-        standard::{
-            macros::group,
-            CommandResult,
-        },
-    },
-    http::Http,
-    model::{event::ResumedEvent, gateway::Ready},
-    prelude::*,
-};
-
-use log::{error, info};
-
-
-
-use commands::{
-    owner::*,
-    backgroundremove::*,
-    meta::*,
-};
-
-struct ShardManagerContainer;
-
-impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<ShardManager>>;
-}
-
-struct Handler;
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn ready(&self, _: Context, ready: Ready) {
-        info!("Connected as {}", ready.user.name);
-    }
-
-    async fn resume(&self, _: Context, _: ResumedEvent) {
-        info!("Resumed");
-    }
-}
-
-#[group]
-#[commands(quit, bgrm, ping)]
-struct General;
 
 #[tokio::main]
 async fn main() {
     // This will load the environment variables located at `./.env`, relative to
     // the CWD. See `./.env.example` for an example on how to structure this.
     dotenv::dotenv().expect("Failed to load .env file");
+    // env_logger::init().expect("Failed to initialize logger.");
 
+    let mut settings = config::Config::default();
+    settings
+        .merge(config::File::with_name("config"))
+        .expect("Failed to open the config file.");
 
-
-    let token = env::var("DISCORD_TOKEN")
-        .expect("Expected a token in the environment");
-
+    let token;
+    if let Ok(x) = env::var("DISCORD_TOKEN") {
+        token = x;
+    } else {
+        token = settings
+            .get_str("discord_token")
+            .expect("discord_token not found in config.");
+    }
     let http = Http::new_with_token(&token);
 
-    // We will fetch your bot's owners and id
-    let (owners, _bot_id) = match http.get_current_application_info().await {
+
+    let (owners, botid, ownerid) = match http.get_current_application_info().await {
         Ok(info) => {
             let mut owners = HashSet::new();
             owners.insert(info.owner.id);
 
-            (owners, info.id)
-        },
-        Err(why) => panic!("Could not access application info: {:?}", why),
+            (owners, info.id, info.owner.id)
+        }
+        Err(why) => panic!("Couldn't get application info: {:?}", why),
     };
 
-    // Create the framework
     let framework = StandardFramework::new()
-        .configure(|c| c
-                   .owners(owners)
-                   .prefix("~"))
-        .group(&GENERAL_GROUP);
+        .configure(|c| c.owners(owners)
+        .on_mention(Some(botid))
+        .prefix("~"))
+        .on_dispatch_error(dispatch_error)
+        .after(after)
+        .normal_message(log_dm)
+        .help(&HELP)
+        .group(&OBS_GROUP)
+        .group(&UTILITY_GROUP);
 
-    let mut client = Client::builder(&token)
-        .framework(framework)
+    let mut client = Client::new(&token)
+        .add_intent(GatewayIntents::GUILDS)
+        .add_intent(GatewayIntents::GUILD_MEMBERS)
+        .add_intent(GatewayIntents::GUILD_BANS)
+        .add_intent(GatewayIntents::GUILD_EMOJIS)
+        .add_intent(GatewayIntents::GUILD_INTEGRATIONS)
+        .add_intent(GatewayIntents::GUILD_WEBHOOKS)
+        .add_intent(GatewayIntents::GUILD_INVITES)
+        .add_intent(GatewayIntents::GUILD_VOICE_STATES)
+        .add_intent(GatewayIntents::GUILD_PRESENCES)
+        .add_intent(GatewayIntents::GUILD_MESSAGES)
+        .add_intent(GatewayIntents::GUILD_MESSAGE_REACTIONS)
+        .add_intent(GatewayIntents::GUILD_MESSAGE_TYPING)
+        .add_intent(GatewayIntents::DIRECT_MESSAGES)
+        .add_intent(GatewayIntents::DIRECT_MESSAGE_REACTIONS)
+        .add_intent(GatewayIntents::DIRECT_MESSAGE_TYPING)
         .event_handler(Handler)
+        .framework(framework)
         .await
-        .expect("Err creating client");
+        .expect("Error creating the client.");
 
+
+    //Set the cache for each channel to 100 messages.
+    client.cache_and_http.cache.set_max_messages(100).await;
+
+    //Collect the bot owners.
+    let mut bot_owners: Vec<UserId> = settings
+        .get_array("bot_owners")
+        .expect("bot_owners not found in config.")
+        .into_iter()
+        .map(|x| UserId(x.try_into::<u64>().expect("Failed to decode owner ID into UserId.")))
+        .collect();
+    bot_owners.push(ownerid);
+
+    //Fill the data with previously gathered and default values.
     {
         let mut data = client.data.write().await;
-        data.insert::<ShardManagerContainer>(client.shard_manager.clone());
+        data.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
+        data.insert::<BotId>(botid);
+        data.insert::<BotOwners>(bot_owners);
+        data.insert::<DefaultPrefix>(
+            settings
+                .get_str("default_prefix")
+                .expect("default_prefix not found in config."),
+        );
+        let map = HashMap::new();
+        data.insert::<GuildPrefixes>(map);
     }
 
-    let shard_manager = client.shard_manager.clone();
-
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-        shard_manager.lock().await.shutdown_all().await;
-    });
-
-    if let Err(why) = client.start().await {
-        error!("Client error: {:?}", why);
-    }
+    client.start_autosharded().await.expect("Failed to start the client.");
 }

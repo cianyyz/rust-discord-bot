@@ -10,6 +10,8 @@ edition = "2018"
 tokio = { version = "0.2", features = ["macros", "signal"] }
 dotenv = "0.15.0"
 log = "0.4.11"
+config = "0.10.1"
 
 [dependencies.serenity]
 features = ["cache", "framework", "standard_framework", "rustls_backend"]
+
